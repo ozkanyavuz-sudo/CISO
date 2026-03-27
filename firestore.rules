@@ -1,0 +1,233 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: kb
+    // Document ID: {kbId}
+    // Fields:
+    //   - id: string (required) - Unique ID
+    //   - uid: string (required) - Owner UID
+    //   - question: string (required, max 500) - Security question
+    //   - answer: string (required, max 5000) - Approved answer
+    //   - category: string (required, max 50) - Category
+    //   - lastUpdated: string (required, ISO 8601) - Last update time
+    //
+    // Collection: questionnaires
+    // Document ID: {qId}
+    // Fields:
+    //   - id: string (required) - Unique ID
+    //   - uid: string (required) - Owner UID
+    //   - name: string (required, max 200) - File name
+    //   - status: string (required, enum: pending, processing, completed)
+    //   - progress: number (required, 0-100)
+    //   - results: list (required, max 500 items) - List of match results
+    //   - createdAt: string (required, ISO 8601) - Creation time
+    //   - originalData: string (required) - Serialized original data
+    //   - columnMapping: map (required) - Mapping of question/answer columns
+    //
+    // Collection: risks
+    // Document ID: {riskId}
+    // Fields:
+    //   - id: string (required) - Unique ID
+    //   - uid: string (required) - Owner UID
+    //   - name: string (required, max 200) - Risk name
+    //   - description: string (required, max 2000) - Risk description
+    //   - likelihood: string (required, enum: Low, Medium, High, Critical)
+    //   - mitigations: string (required, max 2000) - Mitigations
+    //   - owner: string (required, max 100) - Risk owner
+    //   - archived: bool (required) - Archive status
+    //   - createdAt: string (required, ISO 8601) - Creation time
+    //
+    // Collection: pentest_results
+    // Document ID: {resultId}
+    // Fields:
+    //   - id: string (required) - Unique ID
+    //   - uid: string (required) - Owner UID
+    //   - title: string (required, max 200) - Finding title
+    //   - description: string (required, max 2000) - Finding description
+    //   - severity: string (required, enum: Low, Medium, High, Critical)
+    //   - status: string (required, enum: Open, In Progress, Resolved)
+    //   - source: string (required, enum: Internal, External)
+    //   - date: string (required, ISO 8601) - Finding date
+    //   - assignment: string (optional, max 100) - Assigned to
+    //   - remediationPlan: string (optional, max 2000) - Remediation plan
+    //
+    // Collection: compliance_statuses
+    // Document ID: {statusId}
+    // Fields:
+    //   - id: string (required) - Unique ID (framework_controlId)
+    //   - uid: string (required) - Owner UID
+    //   - framework: string (required, max 100) - Framework name
+    //   - controlId: string (required, max 50) - Control ID
+    //   - status: string (required, enum: Not Started, In Progress, Implemented, Not Applicable)
+    //   - lastUpdated: string (required, ISO 8601) - Last update time
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+        request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "sabancidxai@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidKB(data) {
+      return hasRequiredFields(['id', 'uid', 'question', 'answer', 'category', 'lastUpdated']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'question', 'answer', 'category', 'lastUpdated']) &&
+             data.id is string &&
+             data.uid is string &&
+             data.question is string && data.question.size() <= 500 &&
+             data.answer is string && data.answer.size() <= 5000 &&
+             data.category is string && data.category.size() <= 50 &&
+             isValidDateString(data.lastUpdated);
+    }
+
+    function isValidQuestionnaire(data) {
+      return hasRequiredFields(['id', 'uid', 'name', 'status', 'progress', 'results', 'createdAt', 'originalData', 'columnMapping']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'name', 'status', 'progress', 'results', 'createdAt', 'originalData', 'columnMapping']) &&
+             data.id is string &&
+             data.uid is string &&
+             data.name is string && data.name.size() <= 200 &&
+             data.status in ['pending', 'processing', 'completed'] &&
+             data.progress is number && data.progress >= 0 && data.progress <= 100 &&
+             data.results is list && data.results.size() <= 500 &&
+             isValidDateString(data.createdAt) &&
+             data.originalData is string &&
+             data.columnMapping is map &&
+             data.columnMapping.keys().hasAll(['questionIdx', 'answerIdx']) &&
+             data.columnMapping.questionIdx is number &&
+             data.columnMapping.answerIdx is number;
+    }
+
+    function isValidRisk(data) {
+      return hasRequiredFields(['id', 'uid', 'name', 'description', 'likelihood', 'mitigations', 'owner', 'archived', 'createdAt']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'name', 'description', 'likelihood', 'mitigations', 'owner', 'archived', 'createdAt']) &&
+             data.id is string &&
+             data.uid is string &&
+             data.name is string && data.name.size() <= 200 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.likelihood in ['Low', 'Medium', 'High', 'Critical'] &&
+             data.mitigations is string && data.mitigations.size() <= 2000 &&
+             data.owner is string && data.owner.size() <= 100 &&
+             data.archived is bool &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidPentestResult(data) {
+      return hasRequiredFields(['id', 'uid', 'title', 'description', 'severity', 'status', 'source', 'date']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'title', 'description', 'severity', 'status', 'source', 'date', 'assignment', 'remediationPlan']) &&
+             data.id is string &&
+             data.uid is string &&
+             data.title is string && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.severity in ['Low', 'Medium', 'High', 'Critical'] &&
+             data.status in ['Open', 'In Progress', 'Resolved'] &&
+             data.source in ['Internal', 'External'] &&
+             isValidDateString(data.date) &&
+             (!('assignment' in data) || (data.assignment is string && data.assignment.size() <= 100)) &&
+             (!('remediationPlan' in data) || (data.remediationPlan is string && data.remediationPlan.size() <= 2000));
+    }
+
+    function isValidComplianceStatus(data) {
+      return hasRequiredFields(['id', 'uid', 'framework', 'controlId', 'status', 'lastUpdated']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'framework', 'controlId', 'status', 'lastUpdated']) &&
+             data.id is string &&
+             data.uid is string &&
+             data.framework is string && data.framework.size() <= 100 &&
+             data.controlId is string && data.controlId.size() <= 50 &&
+             data.status in ['Not Started', 'In Progress', 'Implemented', 'Not Applicable'] &&
+             isValidDateString(data.lastUpdated);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /kb/{kbId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidKB(request.resource.data) && isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid) && isValidKB(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    match /questionnaires/{qId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidQuestionnaire(request.resource.data) && isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid) && isValidQuestionnaire(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    match /risks/{riskId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidRisk(request.resource.data) && isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid) && isValidRisk(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    match /pentest_results/{resultId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidPentestResult(request.resource.data) && isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid) && isValidPentestResult(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    match /compliance_statuses/{statusId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidComplianceStatus(request.resource.data) && isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid) && isValidComplianceStatus(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && request.resource.data.role == 'user';
+      allow update: if (isOwner(userId) && request.resource.data.role == resource.data.role) || isAdmin();
+    }
+  }
+}

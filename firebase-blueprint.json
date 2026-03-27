@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "QAItem": {
+      "title": "QAItem",
+      "description": "A single question and answer pair in the knowledge base.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the QA item." },
+        "uid": { "type": "string", "description": "The UID of the user who owns this item." },
+        "question": { "type": "string", "description": "The security question." },
+        "answer": { "type": "string", "description": "The approved answer." },
+        "category": { "type": "string", "description": "The category of the question (e.g., General, Network, Data)." },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp of the last update." }
+      },
+      "required": ["id", "uid", "question", "answer", "category", "lastUpdated"]
+    },
+    "Questionnaire": {
+      "title": "Questionnaire",
+      "description": "A security questionnaire being processed.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the questionnaire." },
+        "uid": { "type": "string", "description": "The UID of the user who owns this questionnaire." },
+        "name": { "type": "string", "description": "The name of the questionnaire file." },
+        "status": { "type": "string", "enum": ["pending", "processing", "completed"], "description": "Current processing status." },
+        "progress": { "type": "number", "description": "Processing progress percentage (0-100)." },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "question": { "type": "string" },
+              "answer": { "type": "string" },
+              "confidence": { "type": "number" },
+              "source": { "type": "string" }
+            }
+          },
+          "description": "The list of matched questions and answers."
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp of creation." },
+        "originalData": { "type": "string", "description": "Serialized JSON string of the original Excel data." },
+        "columnMapping": {
+          "type": "object",
+          "properties": {
+            "questionIdx": { "type": "number" },
+            "answerIdx": { "type": "number" }
+          },
+          "required": ["questionIdx", "answerIdx"]
+        }
+      },
+      "required": ["id", "uid", "name", "status", "progress", "results", "createdAt", "originalData", "columnMapping"]
+    },
+    "Risk": {
+      "title": "Risk",
+      "description": "A security risk identified in the risk assessment module.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the risk." },
+        "uid": { "type": "string", "description": "The UID of the user who owns this risk entry." },
+        "name": { "type": "string", "description": "The name of the risk." },
+        "description": { "type": "string", "description": "A detailed description of the risk." },
+        "likelihood": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"], "description": "The likelihood of the risk occurring." },
+        "mitigations": { "type": "string", "description": "Planned or implemented mitigations for the risk." },
+        "owner": { "type": "string", "description": "The person or team responsible for managing the risk." },
+        "archived": { "type": "boolean", "description": "Whether the risk has been archived." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp of creation." }
+      },
+      "required": ["id", "uid", "name", "description", "likelihood", "mitigations", "owner", "archived", "createdAt"]
+    },
+    "PentestResult": {
+      "title": "PentestResult",
+      "description": "A finding from a penetration test.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for the result." },
+        "uid": { "type": "string", "description": "The UID of the user who owns this result." },
+        "title": { "type": "string", "description": "The title of the finding." },
+        "description": { "type": "string", "description": "A detailed description of the finding." },
+        "severity": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"], "description": "The severity of the finding." },
+        "status": { "type": "string", "enum": ["Open", "In Progress", "Resolved"], "description": "The current status of the finding." },
+        "source": { "type": "string", "enum": ["Internal", "External"], "description": "The source of the finding." },
+        "date": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp of the finding." },
+        "assignment": { "type": "string", "description": "The person or team assigned to the finding." },
+        "remediationPlan": { "type": "string", "description": "The plan for remediating the finding." }
+      },
+      "required": ["id", "uid", "title", "description", "severity", "status", "source", "date"]
+    },
+    "ComplianceStatus": {
+      "title": "ComplianceStatus",
+      "description": "The status of a compliance control for a specific framework.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier (frameworkId_controlId)." },
+        "uid": { "type": "string", "description": "The UID of the user who owns this status." },
+        "framework": { "type": "string", "description": "The name of the framework (e.g., NIST CSF 2.0)." },
+        "controlId": { "type": "string", "description": "The ID of the control." },
+        "status": { "type": "string", "enum": ["Not Started", "In Progress", "Implemented", "Not Applicable"], "description": "The current status." },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp of the last update." }
+      },
+      "required": ["id", "uid", "framework", "controlId", "status", "lastUpdated"]
+    }
+  },
+  "firestore": {
+    "/kb/{kbId}": {
+      "schema": "QAItem",
+      "description": "Collection of knowledge base entries."
+    },
+    "/questionnaires/{qId}": {
+      "schema": "Questionnaire",
+      "description": "Collection of processed questionnaires."
+    },
+    "/risks/{riskId}": {
+      "schema": "Risk",
+      "description": "Collection of security risks."
+    },
+    "/pentest_results/{resultId}": {
+      "schema": "PentestResult",
+      "description": "Collection of penetration test findings."
+    },
+    "/compliance_statuses/{statusId}": {
+      "schema": "ComplianceStatus",
+      "description": "Collection of compliance control statuses."
+    }
+  }
+}

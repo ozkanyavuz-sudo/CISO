@@ -1,0 +1,5 @@
+{
+  "name": "CISO Tools",
+  "description": "Automate security Q&A by matching customer questions against your pre-approved security knowledge base using AI.",
+  "requestFramePermissions": []
+}
