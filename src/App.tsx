@@ -73,7 +73,8 @@ import {
   setDoc, 
   deleteDoc, 
   updateDoc,
-  orderBy
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
 
 // Set up PDF.js worker
@@ -531,6 +532,44 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const DEMO_RISKS: Partial<Risk>[] = [
+  {
+    name: 'Phishing Attacks',
+    description: 'Employees falling for sophisticated phishing emails leading to credential theft and unauthorized access.',
+    likelihood: 'High',
+    mitigations: 'Implement mandatory security awareness training, deploy advanced email filtering, and enforce MFA across all accounts.',
+    owner: 'Security Operations'
+  },
+  {
+    name: 'Unpatched Vulnerabilities',
+    description: 'Critical production systems running outdated software with known exploits (CVEs).',
+    likelihood: 'Critical',
+    mitigations: 'Establish a formal patch management policy, perform weekly vulnerability scans, and automate patching for non-critical systems.',
+    owner: 'IT Infrastructure'
+  },
+  {
+    name: 'Insider Threat',
+    description: 'Malicious or negligent actions by employees or contractors leading to data exfiltration.',
+    likelihood: 'Medium',
+    mitigations: 'Implement Data Loss Prevention (DLP) tools, enforce the principle of least privilege, and monitor privileged account activity.',
+    owner: 'Compliance'
+  },
+  {
+    name: 'Data Leakage via Cloud Storage',
+    description: 'Sensitive customer data stored in misconfigured public S3 buckets or cloud storage.',
+    likelihood: 'High',
+    mitigations: 'Use cloud security posture management (CSPM) tools, conduct regular configuration audits, and disable public access by default.',
+    owner: 'Cloud Engineering'
+  },
+  {
+    name: 'Weak Password Policy',
+    description: 'Use of easily guessable passwords across corporate accounts and lack of rotation.',
+    likelihood: 'Medium',
+    mitigations: 'Enforce strong password complexity requirements, implement a password manager, and transition to passwordless authentication where possible.',
+    owner: 'Identity & Access Management'
+  }
+];
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -964,6 +1003,30 @@ export default function App() {
       setIsAddingQA(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, `kb/${item.id}`);
+    }
+  };
+
+  const handleSeedDemoRisks = async () => {
+    if (!user) return;
+    setIsProcessing(true);
+    try {
+      const batch = writeBatch(db);
+      DEMO_RISKS.forEach((risk) => {
+        const riskRef = doc(collection(db, 'risks'));
+        batch.set(riskRef, {
+          ...risk,
+          id: riskRef.id,
+          uid: user.uid,
+          archived: false,
+          createdAt: new Date().toISOString()
+        });
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error("Error seeding demo risks:", error);
+      setGlobalError("Failed to seed demo risks.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -2353,13 +2416,24 @@ export default function App() {
                     <h2 className="text-3xl font-serif italic">Risk Assessment</h2>
                     <p className="text-sm opacity-50">Manage and mitigate organizational security risks.</p>
                   </div>
-                  <button 
-                    onClick={() => setIsAddingRisk(true)}
-                    className="flex items-center gap-2 px-6 py-3 bg-ink text-bg text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-transform"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Risk
-                  </button>
+                  <div className="flex items-center gap-4">
+                    {risks.length === 0 && (
+                      <button 
+                        onClick={handleSeedDemoRisks}
+                        className="flex items-center gap-2 px-6 py-3 border border-ink/20 text-[10px] font-bold uppercase tracking-widest hover:bg-ink/5 transition-colors"
+                      >
+                        <Zap className="w-4 h-4 text-amber-500" />
+                        Seed Demo Risks
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setIsAddingRisk(true)}
+                      className="flex items-center gap-2 px-6 py-3 bg-ink text-bg text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-transform"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Risk
+                    </button>
+                  </div>
                 </div>
 
                 <div className="border border-line bg-card overflow-hidden">
