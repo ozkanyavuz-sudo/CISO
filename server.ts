@@ -85,6 +85,54 @@ async function startServer() {
     }
   });
 
+  // 4. Security Scorecard Integration
+  app.get("/api/scorecard/:domain", async (req, res) => {
+    try {
+      const domain = req.params.domain;
+      const token = process.env.SECURITY_SCORECARD_TOKEN;
+      
+      if (!token) {
+        return res.status(401).json({ error: "SECURITY_SCORECARD_TOKEN environment variable is missing." });
+      }
+
+      const headers = {
+        'Authorization': `Token ${token}`,
+        'Accept': 'application/json'
+      };
+
+      // Fetch company overview
+      const companyRes = await fetch(`https://api.securityscorecard.io/companies/${domain}`, { headers });
+      if (!companyRes.ok) {
+        throw new Error(`Failed to fetch company data: ${companyRes.statusText}`);
+      }
+      const companyData = await companyRes.json();
+
+      // Fetch factors
+      const factorsRes = await fetch(`https://api.securityscorecard.io/companies/${domain}/factors`, { headers });
+      let factorsData = { entries: [] };
+      if (factorsRes.ok) {
+        factorsData = await factorsRes.json();
+      }
+
+      // Fetch issues/vulnerabilities
+      // We fetch the issue counts or active issues. The endpoint /companies/{domain}/issues usually returns issue types.
+      const issuesRes = await fetch(`https://api.securityscorecard.io/companies/${domain}/issues`, { headers });
+      let issuesData = { entries: [] };
+      if (issuesRes.ok) {
+        issuesData = await issuesRes.json();
+      }
+
+      res.json({
+        company: companyData,
+        factors: factorsData.entries || [],
+        issues: issuesData.entries || []
+      });
+    } catch (error: any) {
+      console.error("Security Scorecard API Error:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch Security Scorecard data" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

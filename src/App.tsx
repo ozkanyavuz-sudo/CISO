@@ -709,6 +709,12 @@ export default function App() {
   const [bitlockerData, setBitlockerData] = useState<any>(null);
   const [controlsLoading, setControlsLoading] = useState(false);
 
+  // Scorecard State
+  const [scorecardDomain, setScorecardDomain] = useState(() => localStorage.getItem('scorecardDomain') || '');
+  const [scorecardData, setScorecardData] = useState<any>(null);
+  const [isFetchingScorecard, setIsFetchingScorecard] = useState(false);
+  const [scorecardError, setScorecardError] = useState<string | null>(null);
+
   // Authentication and Data Listeners
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
@@ -868,6 +874,26 @@ export default function App() {
       fetchResilienceData();
     }
   }, [activeTool]);
+
+  const fetchScorecardData = async (domain: string) => {
+    if (!domain) return;
+    setIsFetchingScorecard(true);
+    setScorecardError(null);
+    try {
+      const res = await fetch(`/api/scorecard/${domain}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to fetch scorecard data");
+      }
+      setScorecardData(data);
+      localStorage.setItem('scorecardDomain', domain);
+    } catch (error: any) {
+      console.error("Scorecard API Error:", error);
+      setScorecardError(error.message);
+    } finally {
+      setIsFetchingScorecard(false);
+    }
+  };
 
   const complianceProgress = useMemo(() => {
     const frameworkData = FRAMEWORKS[activeFramework] || [];
@@ -3499,21 +3525,121 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6"
+                className="space-y-8"
               >
-                <div className="w-20 h-20 bg-ink/5 rounded-full flex items-center justify-center">
-                  <BarChart3 className="w-10 h-10 opacity-20" />
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <h2 className="text-2xl font-serif italic">Security Scorecard</h2>
+                    <p className="text-sm opacity-60">Monitor your external security posture and vulnerabilities.</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <input
+                      type="text"
+                      placeholder="Enter domain (e.g. example.com)"
+                      value={scorecardDomain}
+                      onChange={(e) => setScorecardDomain(e.target.value)}
+                      className="px-4 py-2 border border-line bg-card text-sm focus:outline-none w-64"
+                      onKeyDown={(e) => e.key === 'Enter' && fetchScorecardData(scorecardDomain)}
+                    />
+                    <button
+                      onClick={() => fetchScorecardData(scorecardDomain)}
+                      disabled={isFetchingScorecard || !scorecardDomain}
+                      className="px-6 py-2 bg-ink text-bg text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isFetchingScorecard ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
+                      Fetch Score
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <h2 className="text-3xl font-serif italic">Scorecard</h2>
-                  <p className="text-sm opacity-50 max-w-md mx-auto">
-                    Visualize your security posture and performance metrics in a comprehensive scorecard.
-                    This module is currently under development.
-                  </p>
-                </div>
-                <button className="px-8 py-4 border border-line text-[10px] font-bold uppercase tracking-widest opacity-50 cursor-not-allowed">
-                  Coming Soon
-                </button>
+
+                {scorecardError && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    {scorecardError}
+                  </div>
+                )}
+
+                {!scorecardData && !isFetchingScorecard && !scorecardError && (
+                  <div className="flex flex-col items-center justify-center min-h-[40vh] text-center space-y-6 opacity-50">
+                    <div className="w-20 h-20 bg-ink/5 rounded-full flex items-center justify-center">
+                      <BarChart3 className="w-10 h-10 opacity-20" />
+                    </div>
+                    <p className="text-sm max-w-md mx-auto">
+                      Enter a domain above to fetch its Security Scorecard rating, factors, and active issues.
+                    </p>
+                  </div>
+                )}
+
+                {scorecardData && (
+                  <div className="space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="col-span-1 p-8 border border-line bg-card flex flex-col items-center justify-center text-center">
+                        <p className="text-[10px] uppercase tracking-widest opacity-50 mb-4 font-mono">Overall Grade</p>
+                        <div className={cn(
+                          "w-32 h-32 rounded-full flex items-center justify-center text-6xl font-serif italic border-4",
+                          scorecardData.company?.grade === 'A' ? "border-green-500 text-green-500" :
+                          scorecardData.company?.grade === 'B' ? "border-blue-500 text-blue-500" :
+                          scorecardData.company?.grade === 'C' ? "border-amber-500 text-amber-500" :
+                          scorecardData.company?.grade === 'D' ? "border-orange-500 text-orange-500" :
+                          "border-red-500 text-red-500"
+                        )}>
+                          {scorecardData.company?.grade || '?'}
+                        </div>
+                        <h3 className="text-2xl font-bold mt-6">{scorecardData.company?.score || 0} / 100</h3>
+                        <p className="text-sm opacity-60 mt-2">{scorecardData.company?.domain}</p>
+                      </div>
+                      
+                      <div className="col-span-2 grid grid-cols-2 gap-4">
+                        {scorecardData.factors?.map((factor: any) => (
+                          <div key={factor.name} className="p-4 border border-line bg-card flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium capitalize">{factor.name.replace(/_/g, ' ')}</p>
+                              <p className="text-[10px] uppercase tracking-widest opacity-50 font-mono mt-1">Score: {factor.score}</p>
+                            </div>
+                            <div className={cn(
+                              "w-10 h-10 rounded flex items-center justify-center text-lg font-bold",
+                              factor.grade === 'A' ? "bg-green-500/10 text-green-500" :
+                              factor.grade === 'B' ? "bg-blue-500/10 text-blue-500" :
+                              factor.grade === 'C' ? "bg-amber-500/10 text-amber-500" :
+                              factor.grade === 'D' ? "bg-orange-500/10 text-orange-500" :
+                              "bg-red-500/10 text-red-500"
+                            )}>
+                              {factor.grade}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border border-line bg-card overflow-hidden">
+                      <div className="p-4 border-b border-line bg-ink/5 flex items-center gap-4">
+                        <AlertCircle className="w-5 h-5 opacity-50" />
+                        <h3 className="font-bold uppercase tracking-widest text-sm">Active Issues & Vulnerabilities</h3>
+                      </div>
+                      <div className="divide-y divide-line max-h-[400px] overflow-y-auto">
+                        {scorecardData.issues?.length === 0 ? (
+                          <div className="p-8 text-center opacity-50 text-sm italic">
+                            No active issues found for this domain.
+                          </div>
+                        ) : (
+                          scorecardData.issues?.map((issue: any, idx: number) => (
+                            <div key={idx} className="p-4 hover:bg-ink/5 transition-colors flex items-center justify-between">
+                              <div>
+                                <h4 className="font-medium text-sm capitalize">{issue.type?.replace(/_/g, ' ')}</h4>
+                                <p className="text-xs opacity-60 mt-1">Severity: {issue.severity || 'Unknown'}</p>
+                              </div>
+                              <div className="text-right">
+                                <span className="px-3 py-1 bg-ink/5 rounded-full text-xs font-mono">
+                                  Count: {issue.count || 1}
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
