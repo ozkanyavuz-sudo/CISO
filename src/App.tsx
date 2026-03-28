@@ -881,12 +881,26 @@ export default function App() {
     setScorecardError(null);
     try {
       const res = await fetch(`/api/scorecard/${domain}`);
-      const data = await res.json();
+      
+      // Check if response is JSON before parsing
+      const contentType = res.headers.get("content-type");
       if (!res.ok) {
-        throw new Error(data.error || "Failed to fetch scorecard data");
+        if (contentType && contentType.includes("application/json")) {
+          const data = await res.json();
+          throw new Error(data.error || `Error ${res.status}: Failed to fetch scorecard data`);
+        } else {
+          const text = await res.text();
+          throw new Error(`Server error (${res.status}): ${text.substring(0, 100)}`);
+        }
       }
-      setScorecardData(data);
-      localStorage.setItem('scorecardDomain', domain);
+
+      if (contentType && contentType.includes("application/json")) {
+        const data = await res.json();
+        setScorecardData(data);
+        localStorage.setItem('scorecardDomain', domain);
+      } else {
+        throw new Error("Received non-JSON response from server");
+      }
     } catch (error: any) {
       console.error("Scorecard API Error:", error);
       setScorecardError(error.message);

@@ -97,14 +97,67 @@ async function startServer() {
 
       const headers = {
         'Authorization': `Token ${token}`,
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
       };
 
       // Fetch company overview
-      const companyRes = await fetch(`https://api.securityscorecard.io/companies/${domain}`, { headers });
-      if (!companyRes.ok) {
-        throw new Error(`Failed to fetch company data: ${companyRes.statusText}`);
+      let companyRes = await fetch(`https://api.securityscorecard.io/companies/${domain}`, { headers });
+      
+      // Handle 403: Company not in a portfolio
+      if (companyRes.status === 403) {
+        const errorData = await companyRes.json().catch(() => ({}));
+        if (errorData.error?.key === 'company_not_in_a_portfolio') {
+          console.log(`[Scorecard API] Company ${domain} not in portfolio. Attempting to add to default portfolio...`);
+          
+          // 1. Get portfolios
+          const portfoliosRes = await fetch(`https://api.securityscorecard.io/portfolios`, { headers });
+          if (portfoliosRes.ok) {
+            const portfoliosData = await portfoliosRes.json();
+            const portfolio = portfoliosData.entries?.[0]; // Use the first available portfolio
+            
+            if (portfolio) {
+              console.log(`[Scorecard API] Adding ${domain} to portfolio: ${portfolio.name} (${portfolio.id})`);
+              // 2. Add company to portfolio
+              const addRes = await fetch(`https://api.securityscorecard.io/portfolios/${portfolio.id}/companies/${domain}`, {
+                method: 'PUT',
+                headers
+              });
+              
+              if (addRes.ok) {
+                // 3. Retry fetching company data
+                companyRes = await fetch(`https://api.securityscorecard.io/companies/${domain}`, { headers });
+              } else {
+                const addError = await addRes.text();
+                console.error(`[Scorecard API] Failed to add company to portfolio:`, addError);
+              }
+            } else {
+              console.warn(`[Scorecard API] No portfolios found to add ${domain} to.`);
+            }
+          }
+        } else {
+          // Other 403 error
+          return res.status(403).json({ 
+            error: errorData.error?.message || "Forbidden: You don't have access to this company data.",
+            details: errorData 
+          });
+        }
       }
+
+      if (!companyRes.ok) {
+        const errorBody = await companyRes.text();
+        let errorMessage = `Failed to fetch company data: ${companyRes.statusText}`;
+        try {
+          const parsedError = JSON.parse(errorBody);
+          if (parsedError.error?.message) {
+            errorMessage = parsedError.error.message;
+          }
+        } catch (e) { /* Not JSON */ }
+        
+        console.error(`[Scorecard API] Company fetch failed: ${companyRes.status} ${companyRes.statusText}`, errorBody);
+        return res.status(companyRes.status).json({ error: errorMessage });
+      }
+
       const companyData = await companyRes.json();
 
       // Fetch factors
@@ -115,7 +168,6 @@ async function startServer() {
       }
 
       // Fetch issues/vulnerabilities
-      // We fetch the issue counts or active issues. The endpoint /companies/{domain}/issues usually returns issue types.
       const issuesRes = await fetch(`https://api.securityscorecard.io/companies/${domain}/issues`, { headers });
       let issuesData = { entries: [] };
       if (issuesRes.ok) {
