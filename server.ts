@@ -87,6 +87,7 @@ async function startServer() {
 
   // 4. Security Scorecard Integration
   app.get("/api/scorecard/:domain", async (req, res) => {
+    console.log(`[Scorecard API] Received request for domain: ${req.params.domain}`);
     try {
       const domain = req.params.domain;
       const token = process.env.SECURITY_SCORECARD_TOKEN;
