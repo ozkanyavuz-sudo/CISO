@@ -42,16 +42,18 @@ import {
   Crosshair,
   EyeOff,
   Key,
-  Laptop
+  Laptop,
+  Radar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
 import { useDropzone } from 'react-dropzone';
 import * as mammoth from 'mammoth';
 import * as pdfjs from 'pdfjs-dist';
-import { QAItem, MatchResult, Questionnaire, Risk, PentestResult } from './types';
+import { QAItem, MatchResult, Questionnaire, Risk, PentestResult, Vulnerability } from './types';
 import { 
   auth, 
   db, 
@@ -575,7 +577,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [activeTool, setActiveTool] = useState<'questionnaire' | 'controls' | 'resilience' | 'scorecard' | 'risk' | 'compliance' | 'pentest' | 'settings'>('questionnaire');
+  const [activeTool, setActiveTool] = useState<'questionnaire' | 'controls' | 'resilience' | 'scorecard' | 'risk' | 'compliance' | 'pentest' | 'vulnerability' | 'settings'>('questionnaire');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'kb' | 'questionnaires'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -588,6 +590,7 @@ export default function App() {
   const [questionnaires, setQuestionnaires] = useState<Questionnaire[]>([]);
   const [risks, setRisks] = useState<Risk[]>([]);
   const [pentestResults, setPentestResults] = useState<PentestResult[]>([]);
+  const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
   const [isAddingQA, setIsAddingQA] = useState(false);
   const [isAddingRisk, setIsAddingRisk] = useState(false);
   const [isAddingPentest, setIsAddingPentest] = useState(false);
@@ -672,6 +675,7 @@ export default function App() {
       setQuestionnaires([]);
       setRisks([]);
       setPentestResults([]);
+      setVulnerabilities([]);
       setComplianceStatuses({});
       return;
     }
@@ -704,6 +708,13 @@ export default function App() {
       setPentestResults(items);
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'pentest_results'));
 
+    // Vulnerabilities Listener
+    const vulnQuery = query(collection(db, 'vulnerabilities'), where('uid', '==', user.uid), orderBy('lastSeen', 'desc'));
+    const unsubscribeVuln = onSnapshot(vulnQuery, (snapshot) => {
+      const items = snapshot.docs.map(doc => doc.data() as Vulnerability);
+      setVulnerabilities(items);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'vulnerabilities'));
+
     // Compliance Statuses Listener
     const complianceQuery = query(collection(db, 'compliance_statuses'), where('uid', '==', user.uid));
     const unsubscribeCompliance = onSnapshot(complianceQuery, (snapshot) => {
@@ -723,6 +734,7 @@ export default function App() {
       unsubscribeQ();
       unsubscribeRisk();
       unsubscribePentest();
+      unsubscribeVuln();
       unsubscribeCompliance();
     };
   }, [user]);
@@ -829,6 +841,7 @@ export default function App() {
     risk: 'Risk Assessment',
     compliance: 'Compliance Tracker',
     pentest: 'Pentest Results',
+    vulnerability: 'Vulnerability Mgmt',
     settings: 'Settings'
   };
 
@@ -840,6 +853,7 @@ export default function App() {
     risk: <Activity className="w-5 h-5 opacity-50" />,
     compliance: <Lock className="w-5 h-5 opacity-50" />,
     pentest: <Bug className="w-5 h-5 opacity-50" />,
+    vulnerability: <Radar className="w-5 h-5 opacity-50" />,
     settings: <Settings className="w-5 h-5 opacity-50" />
   };
 
@@ -1300,6 +1314,120 @@ export default function App() {
     }
   };
 
+  const nessusFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleNessusUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsProcessing(true);
+    setGlobalError(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        try {
+          let batch = writeBatch(db);
+          let count = 0;
+          const now = new Date().toISOString();
+          
+          const scannedHosts = new Set<string>();
+          const foundVulnIds = new Set<string>();
+
+          for (const row of results.data as any[]) {
+            // Nessus CSV typically has: Plugin ID, CVE, CVSS, Risk, Host, Protocol, Port, Name, Synopsis, Description, Solution, See Also
+            const pluginId = row['Plugin ID'];
+            const host = row['Host'];
+            const severity = row['Risk']; // Critical, High, Medium, Low, None
+            const name = row['Name'];
+            const protocol = row['Protocol'] || 'tcp';
+            const port = row['Port'] || '0';
+            const description = row['Description'] || '';
+            const solution = row['Solution'] || '';
+
+            if (!host) continue;
+            scannedHosts.add(host);
+
+            if (!pluginId || severity === 'None') continue;
+
+            // Map Nessus Risk to our severity
+            let mappedSeverity: Vulnerability['severity'] = 'Info';
+            if (severity === 'Critical') mappedSeverity = 'Critical';
+            else if (severity === 'High') mappedSeverity = 'High';
+            else if (severity === 'Medium') mappedSeverity = 'Medium';
+            else if (severity === 'Low') mappedSeverity = 'Low';
+
+            const id = `${pluginId}_${host.replace(/\./g, '_')}_${port}`;
+            foundVulnIds.add(id);
+            
+            // Check if exists to preserve firstSeen
+            const existing = vulnerabilities.find(v => v.id === id);
+            
+            const vuln: Vulnerability = {
+              id,
+              uid: user.uid,
+              pluginId,
+              pluginName: name.substring(0, 500),
+              severity: mappedSeverity,
+              host: host.substring(0, 200),
+              protocol: protocol.substring(0, 50),
+              port: port.substring(0, 50),
+              description: description.substring(0, 10000),
+              solution: solution.substring(0, 10000),
+              status: 'Open',
+              firstSeen: existing ? existing.firstSeen : now,
+              lastSeen: now
+            };
+
+            batch.set(doc(db, 'vulnerabilities', id), vuln, { merge: true });
+            count++;
+
+            // Firestore batch limit is 500
+            if (count === 490) {
+              await batch.commit();
+              batch = writeBatch(db);
+              count = 0;
+            }
+          }
+
+          // Mark vulnerabilities as remediated if they belong to a scanned host but weren't found in this scan
+          for (const existingVuln of vulnerabilities) {
+            if (existingVuln.status === 'Open' && scannedHosts.has(existingVuln.host) && !foundVulnIds.has(existingVuln.id)) {
+              batch.update(doc(db, 'vulnerabilities', existingVuln.id), {
+                status: 'Remediated',
+                lastSeen: now
+              });
+              count++;
+
+              if (count === 490) {
+                await batch.commit();
+                batch = writeBatch(db);
+                count = 0;
+              }
+            }
+          }
+
+          if (count > 0) {
+            await batch.commit();
+          }
+          
+          setIsProcessing(false);
+          if (nessusFileInputRef.current) nessusFileInputRef.current.value = '';
+        } catch (error) {
+          console.error("Error processing Nessus file:", error);
+          setGlobalError("Failed to process Nessus file. Please ensure it's a valid CSV export.");
+          setIsProcessing(false);
+        }
+      },
+      error: (error) => {
+        console.error("CSV Parse Error:", error);
+        setGlobalError("Failed to parse CSV file.");
+        setIsProcessing(false);
+      }
+    });
+  };
+
   const handleAddPentest = async () => {
     if (!newPentest.title || !user) return;
     
@@ -1554,6 +1682,17 @@ export default function App() {
             >
               <Bug className="w-5 h-5 shrink-0" />
               {isSidebarOpen && <span>Pentest Results</span>}
+            </button>
+
+            <button 
+              onClick={() => setActiveTool('vulnerability')}
+              className={cn(
+                "w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-all duration-200 rounded-lg",
+                activeTool === 'vulnerability' ? "bg-ink text-bg shadow-lg" : "hover:bg-ink/5 opacity-60 hover:opacity-100"
+              )}
+            >
+              <Radar className="w-5 h-5 shrink-0" />
+              {isSidebarOpen && <span>Vulnerability Mgmt</span>}
             </button>
           </nav>
         </div>
@@ -2934,6 +3073,117 @@ export default function App() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+              </motion.div>
+            )}
+
+            {activeTool === 'vulnerability' && (
+              <motion.div
+                key="vulnerability-tool"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-8"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-3xl font-serif italic">Vulnerability Management</h2>
+                    <p className="text-xs opacity-50 mt-1">Import and track Nessus vulnerability scans.</p>
+                  </div>
+                  <div className="flex gap-4">
+                    <input 
+                      type="file" 
+                      ref={nessusFileInputRef} 
+                      onChange={handleNessusUpload} 
+                      className="hidden" 
+                      accept=".csv"
+                    />
+                    <button 
+                      onClick={() => nessusFileInputRef.current?.click()}
+                      disabled={isProcessing}
+                      className="px-6 py-3 bg-ink text-bg text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      Import Nessus CSV
+                    </button>
+                  </div>
+                </div>
+
+                {globalError && (
+                  <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    {globalError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-4 gap-6">
+                  <div className="p-6 border border-line bg-card">
+                    <p className="text-[10px] uppercase tracking-widest opacity-50 mb-2 font-mono">Critical</p>
+                    <h3 className="text-4xl font-serif italic text-red-500">
+                      {vulnerabilities.filter(v => v.severity === 'Critical' && v.status === 'Open').length}
+                    </h3>
+                  </div>
+                  <div className="p-6 border border-line bg-card">
+                    <p className="text-[10px] uppercase tracking-widest opacity-50 mb-2 font-mono">High</p>
+                    <h3 className="text-4xl font-serif italic text-orange-500">
+                      {vulnerabilities.filter(v => v.severity === 'High' && v.status === 'Open').length}
+                    </h3>
+                  </div>
+                  <div className="p-6 border border-line bg-card">
+                    <p className="text-[10px] uppercase tracking-widest opacity-50 mb-2 font-mono">Medium</p>
+                    <h3 className="text-4xl font-serif italic text-amber-500">
+                      {vulnerabilities.filter(v => v.severity === 'Medium' && v.status === 'Open').length}
+                    </h3>
+                  </div>
+                  <div className="p-6 border border-line bg-card">
+                    <p className="text-[10px] uppercase tracking-widest opacity-50 mb-2 font-mono">Low / Info</p>
+                    <h3 className="text-4xl font-serif italic text-blue-500">
+                      {vulnerabilities.filter(v => (v.severity === 'Low' || v.severity === 'Info') && v.status === 'Open').length}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="border border-line bg-card overflow-hidden">
+                  <div className="p-4 border-b border-line bg-ink/5 flex items-center gap-4">
+                    <Radar className="w-5 h-5 opacity-50" />
+                    <h3 className="font-bold uppercase tracking-widest text-sm">Open Vulnerabilities</h3>
+                  </div>
+                  <div className="divide-y divide-line max-h-[600px] overflow-y-auto">
+                    {vulnerabilities.filter(v => v.status === 'Open').length === 0 ? (
+                      <div className="p-12 text-center opacity-50 text-sm italic">
+                        No open vulnerabilities found. Import a Nessus scan to get started.
+                      </div>
+                    ) : (
+                      vulnerabilities.filter(v => v.status === 'Open').map((vuln) => (
+                        <div key={vuln.id} className="p-6 hover:bg-ink/5 transition-colors group">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center gap-3">
+                                <span className={cn(
+                                  "px-2 py-1 text-[10px] font-bold uppercase tracking-widest",
+                                  vuln.severity === 'Critical' ? "bg-red-500/10 text-red-500" :
+                                  vuln.severity === 'High' ? "bg-orange-500/10 text-orange-500" :
+                                  vuln.severity === 'Medium' ? "bg-amber-500/10 text-amber-500" :
+                                  vuln.severity === 'Low' ? "bg-blue-500/10 text-blue-500" :
+                                  "bg-slate-500/10 text-slate-500"
+                                )}>
+                                  {vuln.severity}
+                                </span>
+                                <span className="text-xs font-mono opacity-50">{vuln.pluginId}</span>
+                                <span className="text-xs font-mono opacity-50">{vuln.host}:{vuln.port}</span>
+                              </div>
+                              <h4 className="font-bold text-lg">{vuln.pluginName}</h4>
+                              <p className="text-sm opacity-70 line-clamp-2">{vuln.description}</p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-[10px] uppercase tracking-widest opacity-50 font-mono">First Seen</p>
+                              <p className="text-sm">{new Date(vuln.firstSeen).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </motion.div>
             )}
 

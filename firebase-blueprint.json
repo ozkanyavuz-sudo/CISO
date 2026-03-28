@@ -98,6 +98,27 @@
         "lastUpdated": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp of the last update." }
       },
       "required": ["id", "uid", "framework", "controlId", "status", "lastUpdated"]
+    },
+    "Vulnerability": {
+      "title": "Vulnerability",
+      "description": "A vulnerability finding from a Nessus scan.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier (pluginId_host)." },
+        "uid": { "type": "string", "description": "The UID of the user who owns this finding." },
+        "pluginId": { "type": "string", "description": "The Nessus Plugin ID." },
+        "pluginName": { "type": "string", "description": "The name of the vulnerability." },
+        "severity": { "type": "string", "enum": ["Critical", "High", "Medium", "Low", "Info"], "description": "The severity of the vulnerability." },
+        "host": { "type": "string", "description": "The affected host IP or hostname." },
+        "protocol": { "type": "string", "description": "The protocol (e.g., tcp, udp)." },
+        "port": { "type": "string", "description": "The affected port." },
+        "description": { "type": "string", "description": "A detailed description of the vulnerability." },
+        "solution": { "type": "string", "description": "The recommended solution." },
+        "status": { "type": "string", "enum": ["Open", "Remediated"], "description": "The current status of the finding." },
+        "firstSeen": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp when first seen." },
+        "lastSeen": { "type": "string", "format": "date-time", "description": "ISO 8601 timestamp when last seen." }
+      },
+      "required": ["id", "uid", "pluginId", "pluginName", "severity", "host", "protocol", "port", "description", "solution", "status", "firstSeen", "lastSeen"]
     }
   },
   "firestore": {
@@ -120,6 +141,10 @@
     "/compliance_statuses/{statusId}": {
       "schema": "ComplianceStatus",
       "description": "Collection of compliance control statuses."
+    },
+    "/vulnerabilities/{vulnId}": {
+      "schema": "Vulnerability",
+      "description": "Collection of Nessus vulnerability findings."
     }
   }
 }

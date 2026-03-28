@@ -56,3 +56,19 @@ export interface PentestResult {
   assignment?: string;
   remediationPlan?: string;
 }
+
+export interface Vulnerability {
+  id: string;
+  uid: string;
+  pluginId: string;
+  pluginName: string;
+  severity: 'Critical' | 'High' | 'Medium' | 'Low' | 'Info';
+  host: string;
+  protocol: string;
+  port: string;
+  description: string;
+  solution: string;
+  status: 'Open' | 'Remediated';
+  firstSeen: string;
+  lastSeen: string;
+}

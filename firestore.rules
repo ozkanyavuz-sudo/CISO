@@ -66,6 +66,23 @@ service cloud.firestore {
     //   - status: string (required, enum: Not Started, In Progress, Implemented, Not Applicable)
     //   - lastUpdated: string (required, ISO 8601) - Last update time
     //
+    // Collection: vulnerabilities
+    // Document ID: {vulnId}
+    // Fields:
+    //   - id: string (required) - Unique ID
+    //   - uid: string (required) - Owner UID
+    //   - pluginId: string (required, max 50)
+    //   - pluginName: string (required, max 500)
+    //   - severity: string (required, enum: Critical, High, Medium, Low, Info)
+    //   - host: string (required, max 200)
+    //   - protocol: string (required, max 50)
+    //   - port: string (required, max 50)
+    //   - description: string (required, max 10000)
+    //   - solution: string (required, max 10000)
+    //   - status: string (required, enum: Open, Remediated)
+    //   - firstSeen: string (required, ISO 8601)
+    //   - lastSeen: string (required, ISO 8601)
+    //
     // ===============================================================
 
     // ===============================================================
@@ -185,6 +202,24 @@ service cloud.firestore {
              isValidDateString(data.lastUpdated);
     }
 
+    function isValidVulnerability(data) {
+      return hasRequiredFields(['id', 'uid', 'pluginId', 'pluginName', 'severity', 'host', 'protocol', 'port', 'description', 'solution', 'status', 'firstSeen', 'lastSeen']) &&
+             hasOnlyAllowedFields(['id', 'uid', 'pluginId', 'pluginName', 'severity', 'host', 'protocol', 'port', 'description', 'solution', 'status', 'firstSeen', 'lastSeen']) &&
+             data.id is string &&
+             data.uid is string &&
+             data.pluginId is string && data.pluginId.size() <= 50 &&
+             data.pluginName is string && data.pluginName.size() <= 500 &&
+             data.severity in ['Critical', 'High', 'Medium', 'Low', 'Info'] &&
+             data.host is string && data.host.size() <= 200 &&
+             data.protocol is string && data.protocol.size() <= 50 &&
+             data.port is string && data.port.size() <= 50 &&
+             data.description is string && data.description.size() <= 10000 &&
+             data.solution is string && data.solution.size() <= 10000 &&
+             data.status in ['Open', 'Remediated'] &&
+             isValidDateString(data.firstSeen) &&
+             isValidDateString(data.lastSeen);
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -221,6 +256,13 @@ service cloud.firestore {
       allow read: if isOwner(resource.data.uid);
       allow create: if isAuthenticated() && isValidComplianceStatus(request.resource.data) && isOwner(request.resource.data.uid);
       allow update: if isOwner(resource.data.uid) && isValidComplianceStatus(request.resource.data) && uidNotModified();
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    match /vulnerabilities/{vulnId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isAuthenticated() && isValidVulnerability(request.resource.data) && isOwner(request.resource.data.uid);
+      allow update: if isOwner(resource.data.uid) && isValidVulnerability(request.resource.data) && uidNotModified();
       allow delete: if isOwner(resource.data.uid);
     }
 
