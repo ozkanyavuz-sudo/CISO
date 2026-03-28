@@ -3235,7 +3235,7 @@ export default function App() {
                     <Radar className="w-5 h-5 opacity-50" />
                     <h3 className="font-bold uppercase tracking-widest text-sm">Open Vulnerabilities</h3>
                   </div>
-                  <div className="divide-y divide-line max-h-[600px] overflow-y-auto">
+                  <div className="max-h-[600px] overflow-y-auto">
                     {vulnerabilities.filter(v => v.status === 'Open').length === 0 ? (
                       <div className="p-12 text-center space-y-4">
                         <p className="opacity-50 text-sm italic">
@@ -3250,16 +3250,26 @@ export default function App() {
                         </button>
                       </div>
                     ) : (
-                      vulnerabilities.filter(v => v.status === 'Open').map((vuln) => {
-                        const ageInDays = Math.max(0, Math.floor((new Date().getTime() - new Date(vuln.firstSeen).getTime()) / (1000 * 60 * 60 * 24)));
-                        
-                        return (
-                          <div key={vuln.id} className="p-6 hover:bg-ink/5 transition-colors group">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1 space-y-2">
-                                <div className="flex items-center gap-3">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="sticky top-0 bg-card z-10 shadow-sm">
+                          <tr className="border-b border-line text-[10px] uppercase tracking-widest opacity-50">
+                            <th className="p-4 font-medium whitespace-nowrap">Severity</th>
+                            <th className="p-4 font-medium whitespace-nowrap">IP / Host</th>
+                            <th className="p-4 font-medium whitespace-nowrap">Agent / Plugin</th>
+                            <th className="p-4 font-medium">Title</th>
+                            <th className="p-4 font-medium">Description</th>
+                            <th className="p-4 font-medium whitespace-nowrap">Age</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                          {vulnerabilities.filter(v => v.status === 'Open').map((vuln) => {
+                            const ageInDays = Math.max(0, Math.floor((new Date().getTime() - new Date(vuln.firstSeen).getTime()) / (1000 * 60 * 60 * 24)));
+                            
+                            return (
+                              <tr key={vuln.id} className="hover:bg-ink/5 transition-colors group align-top">
+                                <td className="p-4 whitespace-nowrap">
                                   <span className={cn(
-                                    "px-2 py-1 text-[10px] font-bold uppercase tracking-widest",
+                                    "px-2 py-1 text-[10px] font-bold uppercase tracking-widest inline-block",
                                     vuln.severity === 'Critical' ? "bg-red-500/10 text-red-500" :
                                     vuln.severity === 'High' ? "bg-orange-500/10 text-orange-500" :
                                     vuln.severity === 'Medium' ? "bg-amber-500/10 text-amber-500" :
@@ -3268,28 +3278,38 @@ export default function App() {
                                   )}>
                                     {vuln.severity}
                                   </span>
-                                  <span className="text-xs font-mono opacity-50">{vuln.pluginId}</span>
-                                  <span className="text-xs font-mono opacity-50">{vuln.host}:{vuln.port}</span>
-                                  <span className={cn(
-                                    "px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest rounded-full border",
+                                </td>
+                                <td className="p-4 whitespace-nowrap">
+                                  <div className="text-sm font-mono">{vuln.host}</div>
+                                  <div className="text-[10px] opacity-50 font-mono mt-1">Port: {vuln.port}</div>
+                                </td>
+                                <td className="p-4 whitespace-nowrap">
+                                  <div className="text-sm font-mono">{vuln.pluginId}</div>
+                                </td>
+                                <td className="p-4">
+                                  <div className="text-sm font-bold line-clamp-2">{vuln.pluginName}</div>
+                                </td>
+                                <td className="p-4">
+                                  <div className="text-xs opacity-70 line-clamp-2 max-w-md">{vuln.description}</div>
+                                </td>
+                                <td className="p-4 whitespace-nowrap">
+                                  <div className={cn(
+                                    "px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest rounded-full border inline-block",
                                     ageInDays > 90 ? "border-red-500/30 text-red-500 bg-red-500/5" :
                                     ageInDays > 30 ? "border-orange-500/30 text-orange-500 bg-orange-500/5" :
                                     "border-ink/20 text-ink/70"
                                   )}>
-                                    {ageInDays} {ageInDays === 1 ? 'Day' : 'Days'} Old
-                                  </span>
-                                </div>
-                                <h4 className="font-bold text-lg">{vuln.pluginName}</h4>
-                                <p className="text-sm opacity-70 line-clamp-2">{vuln.description}</p>
-                              </div>
-                              <div className="text-right shrink-0">
-                                <p className="text-[10px] uppercase tracking-widest opacity-50 font-mono">First Seen</p>
-                                <p className="text-sm">{new Date(vuln.firstSeen).toLocaleDateString()}</p>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
+                                    {ageInDays} {ageInDays === 1 ? 'Day' : 'Days'}
+                                  </div>
+                                  <div className="text-[10px] opacity-50 font-mono mt-1">
+                                    {new Date(vuln.firstSeen).toLocaleDateString()}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     )}
                   </div>
                 </div>
