@@ -97,9 +97,9 @@ async function startServer() {
   });
 
   // 4. Security Scorecard Integration
-  app.get(["/api-v1/scorecard", "/api-v1/scorecard/"], async (req, res) => {
+  app.get("/api-v1/scorecard", async (req, res) => {
     const domain = req.query.domain as string;
-    console.log(`[Scorecard API] Handling request for domain: ${domain}`);
+    console.log(`[Server] [Scorecard API] Handling request for domain: ${domain}`);
     try {
       if (!domain) {
         return res.status(400).json({ error: "Domain parameter is required." });
@@ -221,7 +221,17 @@ async function startServer() {
   });
 
   // API 404 Handler - Catch unmatched /api routes before they fall through to Vite
-  app.all(["/api-v1/*", "/api/*"], (req, res) => {
+  app.all("/api-v1/*", (req, res) => {
+    console.warn(`[Server] Unmatched API-v1 request: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ 
+      error: "API-v1 route not found", 
+      path: req.originalUrl,
+      method: req.method,
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  app.all("/api/*", (req, res) => {
     console.warn(`[Server] Unmatched API request: ${req.method} ${req.originalUrl}`);
     res.status(404).json({ 
       error: "API route not found", 

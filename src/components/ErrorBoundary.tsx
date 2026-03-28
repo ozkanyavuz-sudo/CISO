@@ -1,7 +1,7 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React from 'react';
 
 interface Props {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 interface State {
@@ -9,7 +9,7 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends React.Component<any, any> {
+export class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null
@@ -19,7 +19,7 @@ export class ErrorBoundary extends React.Component<any, any> {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
   }
 
@@ -48,6 +48,6 @@ export class ErrorBoundary extends React.Component<any, any> {
       );
     }
 
-    return (this as any).props.children;
+    return this.props.children;
   }
 }
