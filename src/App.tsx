@@ -573,6 +573,69 @@ const DEMO_RISKS: Partial<Risk>[] = [
   }
 ];
 
+const DEMO_VULNERABILITIES: Partial<Vulnerability>[] = [
+  {
+    pluginId: '104743',
+    pluginName: 'TLS Version 1.0 Protocol Detection',
+    severity: 'Medium',
+    host: '192.168.1.10',
+    protocol: 'tcp',
+    port: '443',
+    description: 'The remote service accepts connections using TLS 1.0. TLS 1.0 has a number of cryptographic design flaws. Modern implementations of TLS 1.0 mitigate these problems, but newer versions of TLS like 1.2 and 1.3 are designed against these flaws and should be used whenever possible.',
+    solution: 'Enable support for TLS 1.2 and/or 1.3, and disable support for TLS 1.0.',
+    status: 'Open',
+    firstSeen: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(), // 45 days ago
+  },
+  {
+    pluginId: '156032',
+    pluginName: 'Apache Log4j 2.x < 2.15.0-rc2 RCE (Log4Shell)',
+    severity: 'Critical',
+    host: '10.0.5.50',
+    protocol: 'tcp',
+    port: '8080',
+    description: 'The version of Apache Log4j on the remote host is 2.x prior to 2.15.0-rc2. It is, therefore, affected by a remote code execution vulnerability due to a flaw in the JNDI features used in configuration, log messages, and parameters.',
+    solution: 'Upgrade to Apache Log4j version 2.15.0 or later.',
+    status: 'Open',
+    firstSeen: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(), // 12 days ago
+  },
+  {
+    pluginId: '51192',
+    pluginName: 'SSL Certificate Cannot Be Trusted',
+    severity: 'Medium',
+    host: '192.168.1.15',
+    protocol: 'tcp',
+    port: '8443',
+    description: 'The server\'s X.509 certificate cannot be trusted. This situation can occur in three different ways, in which the chain of trust can be broken.',
+    solution: 'Purchase or generate a proper SSL certificate for this service.',
+    status: 'Open',
+    firstSeen: new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString(), // 120 days ago
+  },
+  {
+    pluginId: '10881',
+    pluginName: 'SSH Protocol Version 1 Supported',
+    severity: 'High',
+    host: '10.0.2.100',
+    protocol: 'tcp',
+    port: '22',
+    description: 'The remote SSH daemon supports version 1 of the SSH protocol. The SSHv1 protocol has known cryptographic flaws and is considered deprecated.',
+    solution: 'Configure the SSH daemon to only support SSHv2.',
+    status: 'Open',
+    firstSeen: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2 days ago
+  },
+  {
+    pluginId: '11219',
+    pluginName: 'Nessus SYN scanner',
+    severity: 'Info',
+    host: '192.168.1.10',
+    protocol: 'tcp',
+    port: '80',
+    description: 'Port 80/tcp was found to be open.',
+    solution: 'n/a',
+    status: 'Open',
+    firstSeen: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days ago
+  }
+];
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -1040,6 +1103,31 @@ export default function App() {
     } catch (error) {
       console.error("Error seeding demo risks:", error);
       setGlobalError("Failed to seed demo risks.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSeedDemoVulnerabilities = async () => {
+    if (!user) return;
+    setIsProcessing(true);
+    try {
+      const batch = writeBatch(db);
+      const now = new Date().toISOString();
+      DEMO_VULNERABILITIES.forEach((vuln) => {
+        const id = `${vuln.pluginId}_${vuln.host?.replace(/\./g, '_')}_${vuln.port}`;
+        const vulnRef = doc(db, 'vulnerabilities', id);
+        batch.set(vulnRef, {
+          ...vuln,
+          id,
+          uid: user.uid,
+          lastSeen: now
+        });
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error("Error seeding demo vulnerabilities:", error);
+      setGlobalError("Failed to seed demo vulnerabilities.");
     } finally {
       setIsProcessing(false);
     }
@@ -3149,38 +3237,59 @@ export default function App() {
                   </div>
                   <div className="divide-y divide-line max-h-[600px] overflow-y-auto">
                     {vulnerabilities.filter(v => v.status === 'Open').length === 0 ? (
-                      <div className="p-12 text-center opacity-50 text-sm italic">
-                        No open vulnerabilities found. Import a Nessus scan to get started.
+                      <div className="p-12 text-center space-y-4">
+                        <p className="opacity-50 text-sm italic">
+                          No open vulnerabilities found. Import a Nessus scan to get started.
+                        </p>
+                        <button
+                          onClick={handleSeedDemoVulnerabilities}
+                          disabled={isProcessing}
+                          className="px-6 py-2 bg-ink/5 hover:bg-ink/10 text-ink text-xs font-bold uppercase tracking-widest transition-colors rounded-lg disabled:opacity-50"
+                        >
+                          {isProcessing ? 'Seeding...' : 'Seed Demo Vulnerabilities'}
+                        </button>
                       </div>
                     ) : (
-                      vulnerabilities.filter(v => v.status === 'Open').map((vuln) => (
-                        <div key={vuln.id} className="p-6 hover:bg-ink/5 transition-colors group">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 space-y-2">
-                              <div className="flex items-center gap-3">
-                                <span className={cn(
-                                  "px-2 py-1 text-[10px] font-bold uppercase tracking-widest",
-                                  vuln.severity === 'Critical' ? "bg-red-500/10 text-red-500" :
-                                  vuln.severity === 'High' ? "bg-orange-500/10 text-orange-500" :
-                                  vuln.severity === 'Medium' ? "bg-amber-500/10 text-amber-500" :
-                                  vuln.severity === 'Low' ? "bg-blue-500/10 text-blue-500" :
-                                  "bg-slate-500/10 text-slate-500"
-                                )}>
-                                  {vuln.severity}
-                                </span>
-                                <span className="text-xs font-mono opacity-50">{vuln.pluginId}</span>
-                                <span className="text-xs font-mono opacity-50">{vuln.host}:{vuln.port}</span>
+                      vulnerabilities.filter(v => v.status === 'Open').map((vuln) => {
+                        const ageInDays = Math.max(0, Math.floor((new Date().getTime() - new Date(vuln.firstSeen).getTime()) / (1000 * 60 * 60 * 24)));
+                        
+                        return (
+                          <div key={vuln.id} className="p-6 hover:bg-ink/5 transition-colors group">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center gap-3">
+                                  <span className={cn(
+                                    "px-2 py-1 text-[10px] font-bold uppercase tracking-widest",
+                                    vuln.severity === 'Critical' ? "bg-red-500/10 text-red-500" :
+                                    vuln.severity === 'High' ? "bg-orange-500/10 text-orange-500" :
+                                    vuln.severity === 'Medium' ? "bg-amber-500/10 text-amber-500" :
+                                    vuln.severity === 'Low' ? "bg-blue-500/10 text-blue-500" :
+                                    "bg-slate-500/10 text-slate-500"
+                                  )}>
+                                    {vuln.severity}
+                                  </span>
+                                  <span className="text-xs font-mono opacity-50">{vuln.pluginId}</span>
+                                  <span className="text-xs font-mono opacity-50">{vuln.host}:{vuln.port}</span>
+                                  <span className={cn(
+                                    "px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest rounded-full border",
+                                    ageInDays > 90 ? "border-red-500/30 text-red-500 bg-red-500/5" :
+                                    ageInDays > 30 ? "border-orange-500/30 text-orange-500 bg-orange-500/5" :
+                                    "border-ink/20 text-ink/70"
+                                  )}>
+                                    {ageInDays} {ageInDays === 1 ? 'Day' : 'Days'} Old
+                                  </span>
+                                </div>
+                                <h4 className="font-bold text-lg">{vuln.pluginName}</h4>
+                                <p className="text-sm opacity-70 line-clamp-2">{vuln.description}</p>
                               </div>
-                              <h4 className="font-bold text-lg">{vuln.pluginName}</h4>
-                              <p className="text-sm opacity-70 line-clamp-2">{vuln.description}</p>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-[10px] uppercase tracking-widest opacity-50 font-mono">First Seen</p>
-                              <p className="text-sm">{new Date(vuln.firstSeen).toLocaleDateString()}</p>
+                              <div className="text-right shrink-0">
+                                <p className="text-[10px] uppercase tracking-widest opacity-50 font-mono">First Seen</p>
+                                <p className="text-sm">{new Date(vuln.firstSeen).toLocaleDateString()}</p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
