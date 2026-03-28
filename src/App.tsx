@@ -899,7 +899,9 @@ export default function App() {
         setScorecardData(data);
         localStorage.setItem('scorecardDomain', domain);
       } else {
-        throw new Error("Received non-JSON response from server");
+        const text = await res.text();
+        console.error("Non-JSON response received:", text.substring(0, 200));
+        throw new Error(`Received non-JSON response from server. Content-Type: ${contentType}. Body starts with: ${text.substring(0, 50)}...`);
       }
     } catch (error: any) {
       console.error("Scorecard API Error:", error);

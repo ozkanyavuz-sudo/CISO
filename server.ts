@@ -106,7 +106,13 @@ async function startServer() {
       
       // Handle 403: Company not in a portfolio
       if (companyRes.status === 403) {
-        const errorData = await companyRes.json().catch(() => ({}));
+        let errorData: any = {};
+        try {
+          errorData = await companyRes.json();
+        } catch (e) {
+          console.error("[Scorecard API] Failed to parse 403 error JSON");
+        }
+
         if (errorData.error?.key === 'company_not_in_a_portfolio') {
           console.log(`[Scorecard API] Company ${domain} not in portfolio. Attempting to add to default portfolio...`);
           
@@ -130,10 +136,20 @@ async function startServer() {
               } else {
                 const addError = await addRes.text();
                 console.error(`[Scorecard API] Failed to add company to portfolio:`, addError);
+                // If retry failed, we'll fall through to the error handling below
+                // But we need a fresh response if we want to read the body again
+                // Actually, we can just return the error here
+                return res.status(addRes.status).json({ 
+                  error: `Failed to add company to portfolio: ${addRes.statusText}`,
+                  details: addError 
+                });
               }
             } else {
               console.warn(`[Scorecard API] No portfolios found to add ${domain} to.`);
+              return res.status(403).json({ error: "Company not in portfolio and no portfolios found to add it to." });
             }
+          } else {
+            return res.status(portfoliosRes.status).json({ error: "Failed to fetch portfolios to add company." });
           }
         } else {
           // Other 403 error
@@ -145,16 +161,20 @@ async function startServer() {
       }
 
       if (!companyRes.ok) {
-        const errorBody = await companyRes.text();
         let errorMessage = `Failed to fetch company data: ${companyRes.statusText}`;
         try {
-          const parsedError = JSON.parse(errorBody);
-          if (parsedError.error?.message) {
-            errorMessage = parsedError.error.message;
-          }
-        } catch (e) { /* Not JSON */ }
+          const errorBody = await companyRes.text();
+          console.error(`[Scorecard API] Company fetch failed: ${companyRes.status} ${companyRes.statusText}`, errorBody);
+          try {
+            const parsedError = JSON.parse(errorBody);
+            if (parsedError.error?.message) {
+              errorMessage = parsedError.error.message;
+            }
+          } catch (e) { /* Not JSON */ }
+        } catch (e) {
+          console.error(`[Scorecard API] Could not read error body:`, e);
+        }
         
-        console.error(`[Scorecard API] Company fetch failed: ${companyRes.status} ${companyRes.statusText}`, errorBody);
         return res.status(companyRes.status).json({ error: errorMessage });
       }
 
