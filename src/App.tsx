@@ -856,9 +856,9 @@ export default function App() {
         setResilienceLoading(true);
         try {
           const [veeamRes, onedriveRes, zertoRes] = await Promise.all([
-            fetch('/api/resilience/veeam'),
-            fetch('/api/resilience/onedrive'),
-            fetch('/api/resilience/zerto')
+            fetch('/api-v1/resilience/veeam'),
+            fetch('/api-v1/resilience/onedrive'),
+            fetch('/api-v1/resilience/zerto')
           ]);
           
           if (veeamRes.ok) setServerBackups(await veeamRes.json());
@@ -880,7 +880,18 @@ export default function App() {
     setIsFetchingScorecard(true);
     setScorecardError(null);
     try {
-      const res = await fetch(`/api/scorecard?domain=${encodeURIComponent(domain)}`);
+      // Health check to verify server is reachable
+      try {
+        const healthRes = await fetch('/health');
+        if (healthRes.ok) {
+          const healthData = await healthRes.json();
+          console.log('[App] Server health check passed:', healthData);
+        }
+      } catch (hErr) {
+        console.warn('[App] Health check failed, server might be down:', hErr);
+      }
+
+      const res = await fetch(`/api-v1/scorecard?domain=${encodeURIComponent(domain)}`);
       
       // Check if response is JSON before parsing
       const contentType = res.headers.get("content-type");
@@ -890,7 +901,8 @@ export default function App() {
           throw new Error(data.error || `Error ${res.status}: Failed to fetch scorecard data`);
         } else {
           const text = await res.text();
-          throw new Error(`Server error (${res.status}): ${text.substring(0, 100)}`);
+          console.error("[App] Non-JSON error response:", text);
+          throw new Error(`Server error (${res.status}). Received non-JSON response. Body starts with: ${text.substring(0, 50)}...`);
         }
       }
 
@@ -900,7 +912,7 @@ export default function App() {
         localStorage.setItem('scorecardDomain', domain);
       } else {
         const text = await res.text();
-        console.error("Non-JSON response received:", text.substring(0, 200));
+        console.error("[App] Expected JSON but received:", contentType, text.substring(0, 100));
         throw new Error(`Received non-JSON response from server. Content-Type: ${contentType}. Body starts with: ${text.substring(0, 50)}...`);
       }
     } catch (error: any) {

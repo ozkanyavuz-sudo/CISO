@@ -14,14 +14,19 @@ async function startServer() {
 
   // Global request logger
   app.use((req, res, next) => {
-    console.log(`[Server] ${req.method} ${req.url}`);
+    console.log(`[Server] ${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();
+  });
+
+  // Health check
+  app.get("/health", (req, res) => {
+    res.json({ status: "ok", time: new Date().toISOString() });
   });
 
   // --- API Routes for Resilience Dashboard ---
 
   // 1. Veeam (Server Backups) Integration
-  app.get("/api/resilience/veeam", async (req, res) => {
+  app.get("/api-v1/resilience/veeam", async (req, res) => {
     try {
       // TODO: Replace with actual Veeam Enterprise Manager REST API call
       // const veeamUrl = process.env.VEEAM_API_URL;
@@ -45,7 +50,7 @@ async function startServer() {
   });
 
   // 2. Microsoft Graph (OneDrive End User Backups) Integration
-  app.get("/api/resilience/onedrive", async (req, res) => {
+  app.get("/api-v1/resilience/onedrive", async (req, res) => {
     try {
       // TODO: Replace with actual Microsoft Graph API call
       // const tenantId = process.env.MS_GRAPH_TENANT_ID;
@@ -70,7 +75,7 @@ async function startServer() {
   });
 
   // 3. Zerto (Disaster Recovery Replication) Integration
-  app.get("/api/resilience/zerto", async (req, res) => {
+  app.get("/api-v1/resilience/zerto", async (req, res) => {
     try {
       // TODO: Replace with actual Zerto REST API call
       // const zertoUrl = process.env.ZERTO_API_URL;
@@ -92,9 +97,9 @@ async function startServer() {
   });
 
   // 4. Security Scorecard Integration
-  app.get("/api/scorecard", async (req, res) => {
+  app.get(["/api-v1/scorecard", "/api-v1/scorecard/"], async (req, res) => {
     const domain = req.query.domain as string;
-    console.log(`[Scorecard API] Received request for domain: ${domain}`);
+    console.log(`[Scorecard API] Handling request for domain: ${domain}`);
     try {
       if (!domain) {
         return res.status(400).json({ error: "Domain parameter is required." });
@@ -216,12 +221,13 @@ async function startServer() {
   });
 
   // API 404 Handler - Catch unmatched /api routes before they fall through to Vite
-  app.all("/api/*", (req, res) => {
+  app.all(["/api-v1/*", "/api/*"], (req, res) => {
     console.warn(`[Server] Unmatched API request: ${req.method} ${req.originalUrl}`);
     res.status(404).json({ 
       error: "API route not found", 
       path: req.originalUrl,
-      method: req.method
+      method: req.method,
+      timestamp: new Date().toISOString()
     });
   });
 
