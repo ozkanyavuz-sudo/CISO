@@ -880,7 +880,7 @@ export default function App() {
     setIsFetchingScorecard(true);
     setScorecardError(null);
     try {
-      const res = await fetch(`/api/scorecard/${domain}`);
+      const res = await fetch(`/api/scorecard?domain=${encodeURIComponent(domain)}`);
       
       // Check if response is JSON before parsing
       const contentType = res.headers.get("content-type");

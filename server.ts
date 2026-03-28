@@ -12,6 +12,12 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Global request logger
+  app.use((req, res, next) => {
+    console.log(`[Server] ${req.method} ${req.url}`);
+    next();
+  });
+
   // --- API Routes for Resilience Dashboard ---
 
   // 1. Veeam (Server Backups) Integration
@@ -86,10 +92,13 @@ async function startServer() {
   });
 
   // 4. Security Scorecard Integration
-  app.get("/api/scorecard/:domain", async (req, res) => {
-    console.log(`[Scorecard API] Received request for domain: ${req.params.domain}`);
+  app.get("/api/scorecard", async (req, res) => {
+    const domain = req.query.domain as string;
+    console.log(`[Scorecard API] Received request for domain: ${domain}`);
     try {
-      const domain = req.params.domain;
+      if (!domain) {
+        return res.status(400).json({ error: "Domain parameter is required." });
+      }
       const token = process.env.SECURITY_SCORECARD_TOKEN;
       
       if (!token) {
@@ -204,6 +213,16 @@ async function startServer() {
       console.error("Security Scorecard API Error:", error);
       res.status(500).json({ error: error.message || "Failed to fetch Security Scorecard data" });
     }
+  });
+
+  // API 404 Handler - Catch unmatched /api routes before they fall through to Vite
+  app.all("/api/*", (req, res) => {
+    console.warn(`[Server] Unmatched API request: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ 
+      error: "API route not found", 
+      path: req.originalUrl,
+      method: req.method
+    });
   });
 
   // Vite middleware for development
